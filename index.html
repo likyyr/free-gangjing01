@@ -1,0 +1,1916 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>钢筋领用库存管理系统 (离线版)</title>
+    
+    <!-- 
+      === 离线版配置说明 ===
+      本版本依赖本地库文件。请确保当前目录下有 "lib" 文件夹，
+      并且包含以下文件：
+      1. lib/tailwindcss.js
+      2. lib/react.production.min.js
+      3. lib/react-dom.production.min.js
+      4. lib/babel.min.js
+    -->
+
+    <!-- 1. 加载本地 Tailwind CSS -->
+    <script src="lib/tailwindcss.js"></script>
+    <script>
+      // 配置 Tailwind (离线模式建议显式配置)
+      if (typeof tailwind !== 'undefined') {
+        tailwind.config = {
+          theme: {
+            extend: {
+              colors: {
+                primary: '#2563eb',
+              },
+              animation: {
+                'fade-in': 'fadeIn 0.5s ease-out',
+                'fade-in-up': 'fadeInUp 0.3s ease-out',
+              },
+              keyframes: {
+                fadeIn: {
+                  '0%': { opacity: '0' },
+                  '100%': { opacity: '1' },
+                },
+                fadeInUp: {
+                  '0%': { opacity: '0', transform: 'translateY(10px)' },
+                  '100%': { opacity: '1', transform: 'translateY(0)' },
+                }
+              }
+            }
+          }
+        }
+      }
+    </script>
+    
+    <!-- 2. 加载本地 React 和 ReactDOM -->
+    <script src="lib/react.production.min.js"></script>
+    <script src="lib/react-dom.production.min.js"></script>
+    
+    <!-- 3. 加载本地 Babel -->
+    <script src="lib/babel.min.js"></script>
+
+    <style>
+      body {
+        background-color: #f3f4f6;
+        color: #1f2937;
+      }
+      #root {
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      /* 加载失败时的提示 */
+      #loading-error {
+        display: none;
+        padding: 40px;
+        color: #ef4444;
+        text-align: center;
+        margin-top: 50px;
+        background: white;
+        border-radius: 8px;
+        margin: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      /* 隐藏数字输入框的箭头 */
+      input::-webkit-outer-spin-button,
+      input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      /* 简单的加载动画 */
+      .loading-spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #2563eb;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px auto;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+</head>
+<body>
+    <div id="loading-error">
+      <div class="loading-spinner"></div>
+      <h3 style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">系统加载中...</h3>
+      <div id="error-text" style="font-size: 14px; color: #666;">
+        如果长时间停留在些页面，说明缺少本地资源库。<br/><br/>
+        请确保 <b>lib</b> 文件夹已创建，并包含以下文件：<br/>
+        tailwindcss.js, react.production.min.js,<br/>
+        react-dom.production.min.js, babel.min.js
+      </div>
+    </div>
+    <div id="root"></div>
+
+    <script>
+      // 检查依赖是否加载成功
+      window.onload = function() {
+        setTimeout(function() {
+          if (typeof React === 'undefined' || typeof ReactDOM === 'undefined' || typeof Babel === 'undefined' || typeof tailwind === 'undefined') {
+            const errorDiv = document.getElementById('loading-error');
+            const errorText = document.getElementById('error-text');
+            errorDiv.style.display = 'block';
+            errorText.innerHTML = `
+              <span style="color:red; font-weight:bold;">❌ 加载失败：缺少本地库文件</span><br/><br/>
+              未检测到 React 或 Tailwind 环境。<br/>
+              请检查 <b>lib/</b> 文件夹下的文件是否完整。
+            `;
+          } else {
+             // 成功加载，React 会接管 root，因此隐藏 loading
+             document.getElementById('loading-error').style.display = 'none';
+          }
+        }, 500); 
+      }
+    </script>
+
+    <!-- 4. 嵌入式应用代码 -->
+    <script type="text/babel" data-presets="react">
+      const { useState, useEffect, useMemo, useRef } = React;
+      const { createRoot } = ReactDOM;
+
+      // --- Icons (SVG) ---
+      const IconDashboard = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>;
+      const IconPlus = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
+      const IconList = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
+      const IconSettings = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
+      const IconDownload = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
+      const IconTrash = () => <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
+      const IconEdit = () => <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>;
+      const IconUpload = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m-4-4v12" /></svg>;
+      const IconFileExcel = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>;
+      const IconDesktop = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>;
+      const IconSwitch = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>;
+      const IconChart = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>;
+      const IconSearch = () => <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>;
+      const IconX = () => <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
+
+      // --- Helper Functions ---
+      const fixFloat = (n) => {
+        return Math.round((n + Number.EPSILON) * 1000) / 1000;
+      };
+
+      const downloadCSV = (content, filename) => {
+        const blob = new Blob(["\ufeff" + content], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+      };
+
+      const calculateStock = (transactions, spec) => {
+        return transactions.reduce((acc, t) => {
+          if (t.spec !== spec) return acc;
+          const w = fixFloat(t.weight);
+          if (t.subType === '内部调拨-出' || t.subType === '内部调拨-入' || t.subType === '直收直发') return acc;
+          return fixFloat(acc + (t.type === 'IN' ? w : -w));
+        }, 0);
+      };
+
+      const calculateTeamStock = (transactions, team, spec) => {
+        return transactions.reduce((acc, t) => {
+          if (t.party !== team || t.spec !== spec) return acc;
+          const w = fixFloat(t.weight);
+          
+          if (t.type === 'OUT') {
+              return fixFloat(acc + w); 
+          } else if (t.type === 'IN' && t.subType === '退料入库') {
+              return fixFloat(acc - w);
+          }
+          return acc;
+        }, 0);
+      };
+      
+      const parseRecordDetails = (t) => {
+          let outParty = '—';
+          let inParty = '—';
+          let businessType = t.subType || (t.type === 'IN' ? '入库' : '出库');
+          let cleanNotes = t.notes || '';
+          
+          const transferTo = t.notes.match(/^\[调出至\]\s*(.*?)(?:\s+-\s+|$)/);
+          const transferFrom = t.notes.match(/^\[调入自\]\s*(.*?)(?:\s+-\s+|$)/);
+          const directSource = t.notes.match(/^\[直发源\]\s*(.*?)(?:\s+-\s+|$)/);
+          const directRel = t.notes.match(/^\[直发-关联入库\]\s*.*?(?:\s+-\s+|$)/);
+          const disposalSource = t.notes.match(/^\[废旧处置-去向\]\s*来源:(.*?)(?:\s+-\s+|$)/);
+
+          if (t.type === 'IN') {
+              if (t.subType === '采购入库' || t.subType === '调拨入库') {
+                  outParty = t.party;
+                  inParty = '库存(仓库)';
+              } else if (t.subType === '退料入库') {
+                  outParty = t.party;
+                  inParty = '库存(仓库)';
+              }
+          } else { 
+              if (t.subType === '正常领用') {
+                  outParty = '库存(仓库)';
+                  inParty = t.party;
+                  if (directRel) cleanNotes = t.notes.replace(/^\[直发-关联入库\]\s*.*?(?:\s+-\s+|$)/, '');
+              } else if (t.subType === '直收直发') {
+                  outParty = directSource ? directSource[1] : '直发(供应商)';
+                  inParty = t.party;
+                  if (directSource) cleanNotes = t.notes.replace(/^\[直发源\]\s*.*?(?:\s+-\s+|$)/, '');
+              } else if (t.subType === '内部调拨-出') {
+                  outParty = t.party;
+                  inParty = transferTo ? transferTo[1] : '未知接收方';
+                  if (transferTo) cleanNotes = t.notes.replace(/^\[调出至\]\s*.*?(?:\s+-\s+|$)/, '');
+              } else if (t.subType === '内部调拨-入') {
+                  outParty = transferFrom ? transferFrom[1] : '未知来源方';
+                  inParty = t.party;
+                  if (transferFrom) cleanNotes = t.notes.replace(/^\[调入自\]\s*.*?(?:\s+-\s+|$)/, '');
+              } else if (t.subType === '处置/销售') {
+                  outParty = '库存(仓库)';
+                  inParty = t.party;
+                  if (disposalSource) cleanNotes = t.notes.replace(/^\[废旧处置-去向\]\s*.*?(?:\s+-\s+|$)/, '');
+              } else if (t.subType === '调拨出库') {
+                  outParty = '库存(仓库)';
+                  inParty = t.party;
+              } else if (t.subType === '盘亏') {
+                  outParty = '库存(仓库)';
+                  inParty = '损耗';
+              }
+          }
+          if (!cleanNotes && t.notes && !t.notes.startsWith('[')) cleanNotes = t.notes;
+          return { outParty, inParty, businessType, cleanNotes };
+      };
+
+      // --- Components ---
+
+      const Sidebar = ({ activeTab, onTabChange }) => {
+        const menu = [
+          { id: 'dashboard', label: '总览看板', icon: <IconDashboard /> },
+          { id: 'entry', label: '出入库登记', icon: <IconPlus /> },
+          { id: 'records', label: '台账明细', icon: <IconList /> }, 
+          { id: 'settings', label: '基础设置', icon: <IconSettings /> },
+        ];
+
+        return (
+          <div className="w-64 bg-slate-900 text-white flex flex-col h-full shadow-xl z-10">
+            <div className="p-6 border-b border-slate-700">
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                🏗️ 钢筋管家
+              </h1>
+              <div className="text-xs text-slate-400 mt-1">智慧工地库存系统 (离线版)</div>
+            </div>
+            <nav className="flex-1 p-4 space-y-2">
+              {menu.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => onTabChange(item.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                    activeTab === item.id 
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' 
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {item.icon}
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              ))}
+            </nav>
+            <div className="p-4 border-t border-slate-800 text-xs text-center text-slate-500">
+              <p>v2.2.1 离线APK版</p>
+              <p className="mt-1 text-slate-600">数据存储于本地设备</p>
+            </div>
+          </div>
+        );
+      };
+
+      const Dashboard = ({ transactions, masterData, onUpdateMasterData }) => {
+        // State for Team Limit Editing
+        const [editingItemLimit, setEditingItemLimit] = useState(null);
+        
+        // State for Carousel
+        const [carouselIndex, setCarouselIndex] = useState(0);
+
+        const stats = useMemo(() => {
+          let totalIn = 0;
+          let totalOut = 0;
+          let externalIn = 0; 
+          
+          // New Metrics
+          let totalTransferOut = 0; // 调拨出库 (外部)
+          let totalTransferIn = 0;  // 调拨入库 (外部)
+          let totalDisposal = 0;    // 处置/销售
+
+          const stockBySpec = {};
+          const usageByTeam = {};
+
+          transactions.forEach(t => {
+            const w = fixFloat(t.weight);
+            const absW = Math.abs(w);
+
+            if (t.type === 'IN') {
+              totalIn = fixFloat(totalIn + w);
+              if (t.subType === '退料入库') {
+                 usageByTeam[t.party] = fixFloat((usageByTeam[t.party] || 0) - absW);
+              } else {
+                 externalIn = fixFloat(externalIn + w);
+                 // 累计调入 (外部)
+                 if (t.subType === '调拨入库') {
+                     totalTransferIn = fixFloat(totalTransferIn + w);
+                 }
+              }
+            }
+            if (t.type === 'OUT') {
+              totalOut = fixFloat(totalOut + w);
+              
+              if (t.subType === '正常领用' || t.subType === '直收直发' || t.subType === '内部调拨-入' || t.subType === '调拨出库') {
+                 usageByTeam[t.party] = fixFloat((usageByTeam[t.party] || 0) + absW);
+              }
+              if (t.subType === '内部调拨-出') {
+                 usageByTeam[t.party] = fixFloat((usageByTeam[t.party] || 0) + w); 
+              }
+
+              // New Metrics Calculation
+              if (t.subType === '调拨出库') {
+                  totalTransferOut = fixFloat(totalTransferOut + absW);
+              }
+              if (t.subType === '处置/销售') {
+                  totalDisposal = fixFloat(totalDisposal + absW);
+              }
+            }
+            
+            const modifier = t.type === 'IN' ? 1 : -1;
+            stockBySpec[t.spec] = fixFloat((stockBySpec[t.spec] || 0) + (w * modifier));
+          });
+
+          return { 
+              totalIn, totalOut, externalIn, 
+              currentStock: fixFloat(totalIn - totalOut), 
+              stockBySpec, usageByTeam,
+              totalTransferOut, totalTransferIn, totalDisposal
+          };
+        }, [transactions]);
+
+        // Carousel Logic
+        const teamUsageData = useMemo(() => {
+            const limits = masterData.teamLimits || {};
+            return Object.entries(stats.usageByTeam)
+                .map(([team, usage]) => {
+                    const limit = limits[team] || 0;
+                    const percent = limit > 0 ? (usage / limit) * 100 : 0;
+                    return { team, usage, limit, percent };
+                })
+                .sort((a, b) => b.usage - a.usage); // Sort by usage high to low
+        }, [stats.usageByTeam, masterData.teamLimits]);
+
+        useEffect(() => {
+            if (teamUsageData.length === 0) return;
+            const interval = setInterval(() => {
+                setCarouselIndex(prev => (prev + 1) % teamUsageData.length);
+            }, 4000); // Rotate every 4 seconds
+            return () => clearInterval(interval);
+        }, [teamUsageData.length]);
+
+        const handleTeamClick = (team) => {
+            const currentLimit = masterData.teamLimits?.[team] || '';
+            setEditingItemLimit({ team, limit: currentLimit });
+        };
+
+        const saveLimit = (e) => {
+            e.preventDefault();
+            if (!editingItemLimit) return;
+            const newLimit = parseFloat(editingItemLimit.limit);
+            
+            const newMasterData = {
+                ...masterData,
+                teamLimits: {
+                    ...(masterData.teamLimits || {}),
+                    [editingItemLimit.team]: newLimit
+                }
+            };
+            onUpdateMasterData(newMasterData);
+            setEditingItemLimit(null);
+        };
+
+        const currentCarouselItem = teamUsageData[carouselIndex];
+
+        return (
+          <div className="p-8 overflow-y-auto h-full bg-gray-50 relative">
+            <h2 className="text-2xl font-bold mb-6 text-gray-800">库存概览</h2>
+            
+            {/* Row 1: Basic Stock Info */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+                <span className="text-sm text-gray-500 font-medium">当前总库存</span>
+                <span className="text-3xl font-bold text-blue-600 mt-2">{stats.currentStock.toFixed(3)} <span className="text-sm text-gray-400">吨</span></span>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-purple-100 flex flex-col">
+                <span className="text-sm text-gray-500 font-medium">外部入场(不含退库)</span>
+                <span className="text-3xl font-bold text-purple-600 mt-2">{stats.externalIn.toFixed(3)} <span className="text-sm text-gray-400">吨</span></span>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+                <span className="text-sm text-gray-500 font-medium">累计入库(含退库)</span>
+                <span className="text-3xl font-bold text-green-600 mt-2">{stats.totalIn.toFixed(3)} <span className="text-sm text-gray-400">吨</span></span>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+                <span className="text-sm text-gray-500 font-medium">累计领用/出库</span>
+                <span className="text-3xl font-bold text-orange-600 mt-2">{stats.totalOut.toFixed(3)} <span className="text-sm text-gray-400">吨</span></span>
+              </div>
+            </div>
+
+            {/* Row 2: External Transfers & Disposal & Carousel */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+               <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-100 flex flex-col">
+                  <span className="text-sm text-gray-500 font-medium">从其他单位调入 (外部)</span>
+                  <span className="text-2xl font-bold text-indigo-600 mt-2">{stats.totalTransferIn.toFixed(3)} <span className="text-sm text-gray-400">吨</span></span>
+               </div>
+               <div className="bg-white p-6 rounded-xl shadow-sm border border-cyan-100 flex flex-col">
+                  <span className="text-sm text-gray-500 font-medium">调出至其他单位 (外部)</span>
+                  <span className="text-2xl font-bold text-cyan-600 mt-2">{stats.totalTransferOut.toFixed(3)} <span className="text-sm text-gray-400">吨</span></span>
+               </div>
+               <div className="bg-white p-6 rounded-xl shadow-sm border border-red-100 flex flex-col">
+                  <span className="text-sm text-gray-500 font-medium">累计处置/销售</span>
+                  <span className="text-2xl font-bold text-red-600 mt-2">{stats.totalDisposal.toFixed(3)} <span className="text-sm text-gray-400">吨</span></span>
+               </div>
+               
+               {/* Carousel Card */}
+               <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-xl shadow-lg text-white flex flex-col justify-between relative overflow-hidden">
+                   <div className="absolute top-0 right-0 p-2 opacity-10"><IconChart /></div>
+                   <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">队伍限额执行率 (轮播)</span>
+                   
+                   {currentCarouselItem ? (
+                       <div className="mt-2 animate-fade-in">
+                           <div className="flex justify-between items-end mb-1">
+                                <span className="font-bold text-lg truncate pr-2">{currentCarouselItem.team}</span>
+                                <span className="text-2xl font-bold text-blue-400">{currentCarouselItem.percent.toFixed(1)}%</span>
+                           </div>
+                           <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
+                                <div className={`h-2 rounded-full transition-all duration-1000 ${currentCarouselItem.percent > 100 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(currentCarouselItem.percent, 100)}%` }}></div>
+                           </div>
+                           <div className="flex justify-between text-xs text-slate-400">
+                                <span>已领: {currentCarouselItem.usage.toFixed(3)}</span>
+                                <span>限额: {currentCarouselItem.limit > 0 ? currentCarouselItem.limit : '未设置'}</span>
+                           </div>
+                       </div>
+                   ) : (
+                       <div className="mt-4 text-sm text-slate-500 text-center">暂无领用数据</div>
+                   )}
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h3 className="font-bold text-lg mb-4 text-gray-800 border-b pb-2">分规格库存 (吨)</h3>
+                <div className="space-y-3">
+                  {Object.keys(stats.stockBySpec).length === 0 && <div className="text-gray-400 text-sm py-4">暂无数据</div>}
+                  {Object.entries(stats.stockBySpec).map(([spec, amount]) => (
+                    <div key={spec} className="flex items-center justify-between">
+                      <span className="font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded text-sm">{spec}</span>
+                      <div className="flex-1 mx-4 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-500 rounded-full" 
+                          style={{ width: `${Math.min(100, (amount / stats.currentStock) * 100 || 0)}%` }}
+                        ></div>
+                      </div>
+                      <span className={`font-bold w-20 text-right ${amount < 0 ? 'text-red-500' : 'text-gray-700'}`}>{amount.toFixed(3)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div className="flex justify-between items-center border-b pb-2 mb-4">
+                    <h3 className="font-bold text-lg text-gray-800">队伍领用排行 (吨)</h3>
+                    <span className="text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded animate-pulse">提示：点击队伍名设置限额</span>
+                </div>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                   {Object.keys(stats.usageByTeam).length === 0 && <div className="text-gray-400 text-sm py-4">暂无数据</div>}
+                  {Object.entries(stats.usageByTeam)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([team, amount], idx) => {
+                      const limit = masterData.teamLimits?.[team] || 0;
+                      const isOverLimit = limit > 0 && amount > limit;
+                      return (
+                        <div key={team} className="flex items-center justify-between group">
+                          <div className="flex items-center gap-3">
+                            <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${idx < 3 ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'}`}>
+                              {idx + 1}
+                            </span>
+                            <div className="flex flex-col">
+                                <span 
+                                    className="text-gray-700 font-medium cursor-pointer hover:text-blue-600 hover:underline decoration-blue-400 underline-offset-2"
+                                    onClick={() => handleTeamClick(team)}
+                                    title="点击修改限额"
+                                >
+                                    {team}
+                                </span>
+                                {limit > 0 && (
+                                    <span className={`text-[10px] ${isOverLimit ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
+                                        限额: {limit} / 进度: {((amount/limit)*100).toFixed(0)}%
+                                    </span>
+                                )}
+                            </div>
+                          </div>
+                          <span className={`font-bold ${isOverLimit ? 'text-red-600' : 'text-gray-900'}`}>{amount.toFixed(3)}</span>
+                        </div>
+                      );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Edit Limit Modal */}
+            {editingItemLimit && (
+                <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+                    <div className="bg-white p-6 rounded-xl shadow-xl w-80 animate-fade-in-up">
+                        <h3 className="font-bold text-gray-800 mb-4">设置领用限额 (总量)</h3>
+                        <div className="mb-4">
+                            <label className="block text-xs font-bold text-gray-500 mb-1">队伍: {editingItemLimit.team}</label>
+                            <input 
+                                type="number" 
+                                autoFocus
+                                placeholder="输入最大允许领用量"
+                                className="w-full border border-gray-300 rounded px-3 py-2 outline-none focus:border-blue-500"
+                                value={editingItemLimit.limit}
+                                onChange={e => setEditingItemLimit({...editingItemLimit, limit: e.target.value})}
+                            />
+                        </div>
+                        <div className="flex gap-2">
+                             <button onClick={() => setEditingItemLimit(null)} className="flex-1 py-2 bg-gray-100 text-gray-600 rounded text-sm hover:bg-gray-200">取消</button>
+                             <button onClick={saveLimit} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded text-sm hover:bg-blue-700">保存</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+          </div>
+        );
+      };
+
+      const EntryForm = ({ masterData, transactions, onAdd }) => {
+        const [mode, setMode] = useState('IN'); 
+        const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+        const [subType, setSubType] = useState('采购入库');
+        const [isDirect, setIsDirect] = useState(false);
+        const [directTargetTeam, setDirectTargetTeam] = useState('');
+        const [disposalTeam, setDisposalTeam] = useState(''); // New State for Disposal Source Team
+        const [party, setParty] = useState(''); 
+        const [sourceParty, setSourceParty] = useState(''); 
+        const [targetParty, setTargetParty] = useState(''); 
+        const [notes, setNotes] = useState('');
+        const [items, setItems] = useState(Array(8).fill({ spec: '', weight: '', max: null }));
+
+        const clearOnFocus = (setter) => () => setter('');
+
+        const currentParties = useMemo(() => {
+           if (mode === 'IN') {
+               if (subType === '退料入库') return masterData.teams;
+               if (subType === '调拨入库') return masterData.partners || [];
+               return masterData.sources;
+           }
+           if (mode === 'OUT') {
+               if (subType === '处置/销售') return masterData.recyclers || [];
+               if (subType === '调拨出库') return masterData.partners || [];
+               return masterData.teams;
+           }
+           return masterData.teams;
+        }, [mode, subType, masterData]);
+
+        // Effect to set default spec to "废旧钢材" when Disposal/Sales is selected
+        useEffect(() => {
+            if (mode === 'OUT' && subType === '处置/销售') {
+                setItems(prevItems => prevItems.map(item => ({ ...item, spec: '废旧钢材', max: null })));
+            }
+        }, [mode, subType]);
+
+        const handleModeChange = (newMode) => {
+          setMode(newMode);
+          setParty('');
+          setSourceParty('');
+          setTargetParty('');
+          setIsDirect(false);
+          setDirectTargetTeam('');
+          setDisposalTeam(''); // Reset disposal team
+          setItems(Array(8).fill({ spec: '', weight: '', max: null })); 
+          setNotes('');
+          
+          if (newMode === 'IN') setSubType('采购入库');
+          else if (newMode === 'OUT') setSubType('正常领用');
+          else if (newMode === 'TRANSFER') setSubType('内部调拨');
+        };
+
+        const updateItem = (index, field, value) => {
+            const newItems = [...items];
+            let newWeight = newItems[index].weight;
+            let maxStock = newItems[index].max;
+
+            // Logic: Auto-fill quantity when spec is selected for OUT/TRANSFER or Return Material
+            if (field === 'spec') {
+                const isReturn = (mode === 'IN' && subType === '退料入库');
+                const isOutOrTransfer = (mode === 'OUT' || mode === 'TRANSFER');
+                const isDisposal = (mode === 'OUT' && subType === '处置/销售');
+                
+                if (isDisposal) {
+                    // Disposal mode ignores stock limits
+                    maxStock = null;
+                } else if (isOutOrTransfer || isReturn) {
+                    let targetParty = party;
+                    if (mode === 'TRANSFER') targetParty = sourceParty;
+
+                    if (!targetParty) {
+                        alert(mode === 'TRANSFER' ? "请先选择'调出队伍'" : (isReturn ? "请先选择'退料队伍'" : "请先选择'领用队伍'"));
+                    } else {
+                        let current = 0;
+                        if (isReturn || mode === 'TRANSFER') {
+                            current = calculateTeamStock(transactions, targetParty, value);
+                        } else if (mode === 'OUT') {
+                            current = calculateStock(transactions, value);
+                        }
+
+                        if (current <= 0) {
+                             maxStock = 0;
+                             newWeight = ''; 
+                        } else {
+                             maxStock = current;
+                             newWeight = current; 
+                        }
+                    }
+                } else {
+                    maxStock = null; 
+                }
+            }
+
+            if (field === 'weight') {
+                newWeight = value;
+                // CHECK HERE: Fix bug where integer (5) snaps to float (4.9999...) due to float errors
+                // Added buffer of 0.0001
+                if (maxStock !== null && parseFloat(value) > maxStock + 0.0001) {
+                    newWeight = maxStock; // Force limit
+                }
+            }
+
+            newItems[index] = { ...newItems[index], [field]: value, weight: newWeight, max: maxStock };
+            setItems(newItems);
+        };
+        
+        // --- Serial No Generator ---
+        const generateSerialNo = (type, dateStr, existingTransactions) => {
+            const prefix = type === 'IN' ? 'RK' : 'CK';
+            const datePart = dateStr.replace(/-/g, ''); // 2024-01-01 -> 20240101
+            const base = `${prefix}${datePart}`;
+            
+            // Find counts for this specific day/type combo by filtering prefix
+            const relevant = existingTransactions
+                .filter(t => t.serialNo && t.serialNo.startsWith(base))
+                .map(t => parseInt(t.serialNo.slice(-3), 10))
+                .filter(n => !isNaN(n));
+                
+            const maxSeq = relevant.length > 0 ? Math.max(...relevant) : 0;
+            const nextSeq = (maxSeq + 1).toString().padStart(3, '0');
+            
+            return `${base}${nextSeq}`;
+        };
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          const validItems = items.filter(item => item.spec && item.weight && parseFloat(item.weight) !== 0);
+
+          if (validItems.length === 0) return alert("请至少录入一行有效的规格和重量");
+          
+          // Check for precision exceeding 3 decimal places
+          const hasInvalidPrecision = validItems.some(item => {
+             const parts = item.weight.toString().split('.');
+             return parts.length === 2 && parts[1].length > 3;
+          });
+
+          if (hasInvalidPrecision) {
+              return alert("精度限制警告: 系统仅支持最多 3 位小数（精确到公斤），请检查输入。");
+          }
+
+          const tempStock = {}; 
+          validItems.forEach(item => {
+             const w = parseFloat(item.weight);
+             tempStock[item.spec] = (tempStock[item.spec] || 0) + w;
+          });
+          
+          const isReturn = (mode === 'IN' && subType === '退料入库');
+          const isDisposal = (mode === 'OUT' && subType === '处置/销售');
+
+          if ((mode === 'OUT' || mode === 'TRANSFER' || isReturn) && !isDisposal) {
+              for (const [spec, requiredWeight] of Object.entries(tempStock)) {
+                  let current = 0;
+                  let checkName = '仓库库存';
+                  
+                  if (mode === 'TRANSFER') {
+                      if (!sourceParty) return alert("请选择调出队伍");
+                      current = calculateTeamStock(transactions, sourceParty, spec);
+                      checkName = `队伍[${sourceParty}]持有量`;
+                  } else if (isReturn) {
+                      if (!party) return alert("请选择退料队伍");
+                      current = calculateTeamStock(transactions, party, spec);
+                      checkName = `队伍[${party}]持有量`;
+                  } else {
+                      current = calculateStock(transactions, spec);
+                  }
+                  
+                  if (current < requiredWeight - 0.0001) {
+                      return alert(`库存不足警告！\n${checkName}不足\n规格: ${spec}\n当前可用: ${current.toFixed(3)} 吨\n本次需求: ${requiredWeight.toFixed(3)} 吨`);
+                  }
+              }
+          }
+
+          const now = Date.now();
+          let processedCount = 0;
+          
+          // Pre-calculate Serial Numbers base for batch
+          // Note: In a loop, we must increment the sequence manually since transactions state isn't updated yet
+          let currentTransactions = [...transactions];
+
+          validItems.forEach((item, idx) => {
+            // Fix float here to ensure precision before saving
+            const w = fixFloat(parseFloat(item.weight));
+            
+            // Helper to add and update local tracking for serial no generation
+            const createAndPush = (overrides) => {
+                const type = overrides.type || 'IN';
+                const serialNo = generateSerialNo(type, date, currentTransactions);
+                const newRecord = {
+                    id: crypto.randomUUID(),
+                    date,
+                    spec: item.spec,
+                    weight: w,
+                    notes,
+                    timestamp: now + idx + (overrides.timestampOffset || 0), 
+                    serialNo,
+                    ...overrides
+                };
+                delete newRecord.timestampOffset;
+                currentTransactions.push(newRecord);
+                return newRecord;
+            };
+
+            if (mode === 'TRANSFER') {
+                if (!sourceParty || !targetParty) return; 
+                // Source Out
+                onAdd(createAndPush({
+                    type: 'OUT',
+                    party: sourceParty,
+                    weight: fixFloat(-w), 
+                    subType: '内部调拨-出',
+                    notes: `[调出至] ${targetParty} - ${notes}`,
+                    timestampOffset: 0
+                }));
+                // Target In
+                onAdd(createAndPush({
+                    type: 'OUT', 
+                    party: targetParty,
+                    weight: w,
+                    subType: '内部调拨-入',
+                    notes: `[调入自] ${sourceParty} - ${notes}`,
+                    timestampOffset: 1,
+                    serialNo: generateSerialNo('IN', date, currentTransactions) // Force RK for receiver
+                }));
+
+            } else if (mode === 'IN') {
+                if (!party) return;
+                onAdd(createAndPush({ type: 'IN', party: party, subType: subType }));
+                if (isDirect && directTargetTeam) {
+                    onAdd(createAndPush({
+                        type: 'OUT',
+                        party: directTargetTeam,
+                        subType: '正常领用', // Changed from 直收直发 to 正常领用
+                        notes: `[直发-关联入库] 来源:${party} - ${notes}`,
+                        timestampOffset: 100
+                    }));
+                }
+
+            } else if (mode === 'OUT') {
+                if (!party) return;
+                if (isDisposal) {
+                    if (!disposalTeam) return alert("请选择被处置队伍");
+                    // Dual Record Creation for Disposal
+                    // 1. Team Return (Negative impact on team, Positive on Warehouse)
+                    onAdd(createAndPush({
+                        type: 'IN',
+                        subType: '退料入库',
+                        party: disposalTeam, // The team losing the material
+                        spec: '废旧钢材',
+                        weight: w,
+                        notes: `[废旧处置-来源] ${notes}`,
+                        timestampOffset: 0
+                    }));
+                    // 2. Warehouse Sale (Negative impact on Warehouse, 0 Net on Warehouse)
+                    onAdd(createAndPush({
+                        type: 'OUT',
+                        subType: '处置/销售',
+                        party: party, // The recycler
+                        spec: '废旧钢材',
+                        weight: w,
+                        notes: `[废旧处置-去向] 来源:${disposalTeam} - ${notes}`,
+                        timestampOffset: 1,
+                        serialNo: generateSerialNo('OUT', date, currentTransactions)
+                    }));
+                } else {
+                    onAdd(createAndPush({ type: 'OUT', party: party, subType: subType }));
+                }
+            }
+            processedCount++;
+          });
+
+          if (processedCount > 0) {
+              alert("登记成功！");
+              setItems(Array(8).fill({ spec: '', weight: '', max: null }));
+              setNotes('');
+              setParty('');
+              setSourceParty('');
+              setTargetParty('');
+              setDirectTargetTeam('');
+              setDisposalTeam('');
+          }
+        };
+        
+        let targetLabel = '领用队伍 / 接收方';
+        let placeholderText = '选择队伍';
+        if (mode === 'IN') {
+             if (subType === '退料入库') { targetLabel = '退料队伍'; placeholderText = '选择队伍'; }
+             else if (subType === '调拨入库') { targetLabel = '来源往来单位'; placeholderText = '选择往来单位'; }
+             else { targetLabel = '来源单位 / 供应商'; placeholderText = '选择供应商'; }
+        } else if (mode === 'OUT') {
+             if (subType === '处置/销售') { targetLabel = '回收单位 (接收方)'; placeholderText = '选择回收单位'; }
+             else if (subType === '调拨出库') { targetLabel = '目标往来单位'; placeholderText = '选择往来单位'; }
+        }
+
+        return (
+          <div className="p-4 md:p-8 h-full bg-gray-50 flex justify-center overflow-y-auto">
+            <div className="w-full max-w-4xl bg-white rounded-xl shadow-sm border border-gray-100 p-6 md:p-8 h-fit">
+              <h2 className="text-2xl font-bold mb-6 text-gray-800">📋 出入库 & 调拨登记</h2>
+              
+              <div className="flex bg-gray-100 p-1 rounded-lg mb-8">
+                <button type="button" className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${mode === 'IN' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => handleModeChange('IN')}>入库 (来源)</button>
+                <button type="button" className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${mode === 'OUT' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => handleModeChange('OUT')}>出库 (领用)</button>
+                <button type="button" className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${mode === 'TRANSFER' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => handleModeChange('TRANSFER')}><span className="flex items-center justify-center gap-1"><IconSwitch /> 内部调拨</span></button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">业务日期</label>
+                    <input type="date" required className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none" value={date} onChange={e => setDate(e.target.value)} />
+                  </div>
+                  {mode === 'IN' && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">入库类型</label>
+                        <select className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white" value={subType} onChange={e => setSubType(e.target.value)}>
+                            <option value="采购入库">采购入库</option>
+                            <option value="调拨入库">调拨入库 (外部)</option>
+                            <option value="退料入库">退料入库 (扣减队伍领用)</option>
+                        </select>
+                    </div>
+                  )}
+                  {mode === 'OUT' && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">出库类型</label>
+                        <select className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white" value={subType} onChange={e => setSubType(e.target.value)}>
+                            <option value="正常领用">正常领用</option>
+                            <option value="调拨出库">调拨出库 (外部)</option>
+                            <option value="处置/销售">处置/销售</option>
+                            <option value="盘亏">盘亏</option>
+                        </select>
+                    </div>
+                  )}
+                  {mode === 'TRANSFER' && <div className="flex items-end pb-2 text-indigo-600 font-bold text-sm">队伍间内部调拨</div>}
+                </div>
+
+                {mode === 'IN' && subType === '采购入库' && (
+                    <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" className="w-4 h-4 text-green-600 rounded focus:ring-green-500" checked={isDirect} onChange={e => setIsDirect(e.target.checked)} />
+                            <span className="font-bold text-green-800">启用直收直发 (入库同时领用)</span>
+                        </label>
+                        {isDirect && (
+                             <div className="mt-3">
+                                <label className="block text-xs font-bold text-green-700 mb-1">直发接收队伍</label>
+                                <div className="relative">
+                                    <input list="teams_direct" required placeholder="选择接收队伍" className="w-full px-4 py-2 rounded-lg border border-green-300 focus:ring-2 focus:ring-green-500 outline-none" value={directTargetTeam} onFocus={clearOnFocus(setDirectTargetTeam)} onChange={e => setDirectTargetTeam(e.target.value)} />
+                                    <datalist id="teams_direct">{masterData.teams.map(p => <option key={p} value={p} />)}</datalist>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+                
+                {mode === 'TRANSFER' ? (
+                     <div className="grid grid-cols-2 gap-6">
+                       <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2 text-red-600">从 (调出方)</label>
+                          <div className="relative">
+                            <input list="teams_source" required placeholder="选择调出队伍" className="w-full px-4 py-2 rounded-lg border border-red-200 focus:ring-2 focus:ring-red-500 outline-none" value={sourceParty} onFocus={clearOnFocus(setSourceParty)} onChange={e => setSourceParty(e.target.value)} />
+                            <datalist id="teams_source">{masterData.teams.map(p => <option key={p} value={p} />)}</datalist>
+                          </div>
+                       </div>
+                       <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2 text-green-600">至 (调入方)</label>
+                          <div className="relative">
+                            <input list="teams_target" required placeholder="选择调入队伍" className="w-full px-4 py-2 rounded-lg border border-green-200 focus:ring-2 focus:ring-green-500 outline-none" value={targetParty} onFocus={clearOnFocus(setTargetParty)} onChange={e => setTargetParty(e.target.value)} />
+                            <datalist id="teams_target">{masterData.teams.map(p => <option key={p} value={p} />)}</datalist>
+                          </div>
+                       </div>
+                     </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{targetLabel}</label>
+                        <div className="relative">
+                          <input list="parties" required placeholder={placeholderText} className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none" value={party} onFocus={clearOnFocus(setParty)} onChange={e => setParty(e.target.value)} />
+                          <datalist id="parties">{currentParties.map(p => <option key={p} value={p} />)}</datalist>
+                        </div>
+                      </div>
+                      
+                      {/* Disposal Source Team Selector */}
+                      {mode === 'OUT' && subType === '处置/销售' && (
+                        <div>
+                          <label className="block text-sm font-medium text-red-600 mb-2">被处置队伍 (来源)</label>
+                          <div className="relative">
+                            <input list="disposal_teams" required placeholder="选择产生废旧的队伍" className="w-full px-4 py-2 rounded-lg border border-red-300 bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" value={disposalTeam} onFocus={clearOnFocus(setDisposalTeam)} onChange={e => setDisposalTeam(e.target.value)} />
+                            <datalist id="disposal_teams">{masterData.teams.map(p => <option key={p} value={p} />)}</datalist>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-2">材料明细 (最多8行)</label>
+                   <div className="border border-gray-200 rounded-lg overflow-hidden">
+                       <div className="grid grid-cols-12 bg-gray-50 text-xs text-gray-500 font-bold p-2 border-b border-gray-200">
+                           <div className="col-span-1 text-center">#</div>
+                           <div className="col-span-7 pl-2">钢筋规格</div>
+                           <div className="col-span-4 pl-2">重量(吨)</div>
+                       </div>
+                       {items.map((item, idx) => (
+                           <div key={idx} className="grid grid-cols-12 border-b border-gray-100 last:border-0 p-1 relative">
+                               <div className="col-span-1 flex items-center justify-center text-gray-400 text-xs">{idx + 1}</div>
+                               <div className="col-span-7 px-1"><input list="specs" placeholder="规格" className="w-full p-1 bg-transparent focus:bg-blue-50 outline-none border-b border-transparent focus:border-blue-300 text-sm font-mono" value={item.spec} onChange={e => updateItem(idx, 'spec', e.target.value)} /></div>
+                               <div className="col-span-4 px-1 relative">
+                                   <input type="number" step="0.001" placeholder="0.000" className={`w-full p-1 bg-transparent outline-none border-b text-sm font-mono ${item.max !== null && item.weight >= item.max ? 'text-red-600 font-bold' : ''} ${item.max !== null ? 'focus:border-red-300' : 'focus:border-blue-300'} border-transparent`} value={item.weight} onChange={e => updateItem(idx, 'weight', e.target.value)} />
+                                   {item.max !== null && <span className="absolute right-1 top-1 text-[10px] text-gray-400 pointer-events-none">/{item.max.toFixed(3)}</span>}
+                               </div>
+                           </div>
+                       ))}
+                   </div>
+                   <datalist id="specs">{masterData.specs.map(s => <option key={s} value={s} />)}</datalist>
+                   {(mode === 'OUT' || mode === 'TRANSFER' || (mode === 'IN' && subType === '退料入库')) && subType !== '处置/销售' && <p className="text-xs text-gray-400 mt-2 text-right">* 数量栏将自动填充当前可用库存，且不可超过该值</p>}
+                   {subType === '处置/销售' && <p className="text-xs text-red-400 mt-2 text-right">* 处置/销售模式下不校验库存，默认规格为“废旧钢材”，请确认重量。</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">备注说明</label>
+                  <textarea className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none h-20 resize-none" placeholder="填写车辆信息、使用部位等..." value={notes} onChange={e => setNotes(e.target.value)}></textarea>
+                </div>
+
+                <button type="submit" className={`w-full py-3 rounded-lg text-white font-bold shadow-lg transform transition-all active:scale-95 ${mode === 'IN' ? 'bg-green-600 hover:bg-green-700 shadow-green-200' : mode === 'OUT' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}>确认提交 ({items.filter(i => i.spec && i.weight).length} 行)</button>
+              </form>
+            </div>
+          </div>
+        );
+      };
+
+      const EditModal = ({ transaction, masterData, onClose, onSave }) => {
+        const [formData, setFormData] = useState(() => {
+            const d = parseRecordDetails(transaction);
+            let otherParty = '';
+            let noteContent = transaction.notes;
+
+            if (transaction.subType === '内部调拨-出') {
+                const match = transaction.notes.match(/^\[调出至\]\s*(.*?)(?:\s+-\s+|$)(.*)/);
+                if (match) { otherParty = match[1]; noteContent = match[2] || ''; }
+            } else if (transaction.subType === '内部调拨-入') {
+                const match = transaction.notes.match(/^\[调入自\]\s*(.*?)(?:\s+-\s+|$)(.*)/);
+                if (match) { otherParty = match[1]; noteContent = match[2] || ''; }
+            } else if (transaction.subType === '直收直发') {
+                const match = transaction.notes.match(/^\[直发源\]\s*(.*?)(?:\s+-\s+|$)(.*)/);
+                if (match) { otherParty = match[1]; noteContent = match[2] || ''; }
+            }
+            
+            if (!otherParty) noteContent = transaction.notes;
+
+            return { 
+                ...transaction, 
+                otherParty, 
+                cleanNotes: noteContent 
+            };
+        });
+
+        const isComplex = ['内部调拨-出', '内部调拨-入', '直收直发'].includes(formData.subType);
+        
+        const getLabel = () => {
+             if (formData.subType === '内部调拨-出') return { main: '调出方 (Source)', other: '调入方 (Target)' };
+             if (formData.subType === '内部调拨-入') return { main: '调入方 (Target)', other: '调出方 (Source)' };
+             if (formData.subType === '直收直发') return { main: '接收方 (Team)', other: '直发源 (Supplier)' };
+             return { main: '相关方 / 队伍' };
+        };
+        const labels = getLabel();
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            const w = fixFloat(parseFloat(formData.weight));
+            if (!formData.spec || !w) return alert("请填写完整的规格和重量");
+            
+            const parts = formData.weight.toString().split('.');
+            if (parts.length === 2 && parts[1].length > 3) {
+                 return alert("精度限制警告: 系统仅支持最多 3 位小数（精确到公斤），请检查输入。");
+            }
+
+            let finalWeight = w;
+            if (transaction.weight < 0 && w > 0) {
+                finalWeight = -Math.abs(w);
+            } else if (transaction.weight > 0 && w > 0) {
+                 finalWeight = Math.abs(w);
+            }
+
+            let finalNotes = formData.cleanNotes;
+            if (isComplex && formData.otherParty) {
+                 let tag = '';
+                 if (formData.subType === '内部调拨-出') tag = '[调出至]';
+                 else if (formData.subType === '内部调拨-入') tag = '[调入自]';
+                 else if (formData.subType === '直收直发') tag = '[直发源]';
+                 
+                 finalNotes = `${tag} ${formData.otherParty}${formData.cleanNotes ? ' - ' + formData.cleanNotes : ''}`;
+            }
+
+            onSave({ ...formData, weight: finalWeight, notes: finalNotes });
+        };
+
+        const absWeight = Math.abs(formData.weight);
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 animate-fade-in-up">
+                    <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                        <IconEdit /> 修改流水记录
+                    </h3>
+                    <div className="mb-4 p-2 bg-blue-50 text-blue-700 text-xs rounded border border-blue-100">
+                        当前业务类型: <strong>{formData.subType || (formData.type === 'IN' ? '入库' : '出库')}</strong>
+                    </div>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">业务日期</label>
+                            <input type="date" required value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                         
+                        {/* Display Serial No (Read Only) */}
+                         <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">台账序号 (系统生成)</label>
+                            <input type="text" readOnly value={formData.serialNo || '-'} className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-gray-500 font-mono" />
+                        </div>
+
+                        {/* Dynamic Party Inputs */}
+                        <div className="grid grid-cols-1 gap-4">
+                            <div>
+                                <label className={`block text-xs font-bold mb-1 ${isComplex ? 'text-blue-600' : 'text-gray-500'}`}>{labels.main}</label>
+                                <input list="edit_parties" required value={formData.party} onChange={e => setFormData({...formData, party: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                            </div>
+                            {isComplex && (
+                                <div>
+                                    <label className="block text-xs font-bold text-green-600 mb-1">{labels.other}</label>
+                                    <input list="edit_parties" required value={formData.otherParty} onChange={e => setFormData({...formData, otherParty: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-green-50" />
+                                </div>
+                            )}
+                            <datalist id="edit_parties">
+                                {[...masterData.teams, ...masterData.sources, ...(masterData.partners||[]), ...(masterData.recyclers||[])].map(p => <option key={p} value={p} />)}
+                            </datalist>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">规格</label>
+                                <input list="edit_specs" required value={formData.spec} onChange={e => setFormData({...formData, spec: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono" />
+                                <datalist id="edit_specs">{masterData.specs.map(s => <option key={s} value={s} />)}</datalist>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">重量 (吨)</label>
+                                <input type="number" step="0.001" required value={absWeight} onChange={e => setFormData({...formData, weight: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono font-bold" />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">备注</label>
+                            <input type="text" value={formData.cleanNotes} onChange={e => setFormData({...formData, cleanNotes: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                        
+                        <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
+                            <button type="button" onClick={onClose} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">取消</button>
+                            <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-md transition-colors">保存修改</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+      };
+
+      // --- MultiSelect Component ---
+      const MultiSelect = ({ placeholder, options, value, onChange }) => {
+        const [isOpen, setIsOpen] = useState(false);
+        const containerRef = useRef(null);
+
+        useEffect(() => {
+            const handleClickOutside = (event) => {
+                if (containerRef.current && !containerRef.current.contains(event.target)) {
+                    setIsOpen(false);
+                }
+            };
+            document.addEventListener("mousedown", handleClickOutside);
+            return () => document.removeEventListener("mousedown", handleClickOutside);
+        }, []);
+
+        const toggleOption = (option) => {
+            const newValue = value.includes(option)
+                ? value.filter(v => v !== option)
+                : [...value, option];
+            onChange(newValue);
+        };
+
+        return (
+            <div className="relative" ref={containerRef}>
+                <div 
+                    className="w-full px-2 py-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none bg-white cursor-pointer flex justify-between items-center h-[38px]"
+                    onClick={() => setIsOpen(!isOpen)}
+                >
+                    <span className={`block truncate ${(!value || value.length === 0) ? "text-gray-400" : "text-gray-700"}`}>
+                        {(!value || value.length === 0) ? placeholder : value.join(', ')}
+                    </span>
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </div>
+                {isOpen && (
+                    <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {options.map(opt => (
+                            <label key={opt} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer select-none">
+                                <input 
+                                    type="checkbox" 
+                                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
+                                    checked={value.includes(opt)}
+                                    onChange={() => toggleOption(opt)}
+                                />
+                                <span className="ml-2 text-sm text-gray-700">{opt}</span>
+                            </label>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+      };
+
+      const RecordsTable = ({ transactions, masterData, onDelete, onUpdate }) => {
+        const [viewMode, setViewMode] = useState('list');
+        const [groupBy, setGroupBy] = useState('team'); 
+        
+        // Input States (Controlled)
+        const [inputs, setInputs] = useState({
+            startDate: '', endDate: '', 
+            querySubject: '库存(仓库)', // Default to Warehouse
+            spec: '', notes: '',
+            businessType: [] // Changed to array for multi-select
+        });
+        
+        // Active Filter State (Applied on Search)
+        const [query, setQuery] = useState(inputs);
+        
+        // Edit State
+        const [editingItem, setEditingItem] = useState(null);
+
+        const allParties = useMemo(() => [...new Set([...masterData.teams, ...masterData.sources, ...(masterData.partners||[]), ...(masterData.recyclers||[]), '库存(仓库)'])], [masterData]);
+
+        const filterTypeOptions = [
+            "采购入库", "正常领用", "调拨入库", "调拨出库", 
+            "内部调拨-出", "内部调拨-入", "退料入库", 
+            "处置/销售", "盘亏"
+        ];
+
+        // Handlers
+        const handleSearch = () => setQuery(inputs);
+        const handleReset = () => {
+             const empty = { startDate: '', endDate: '', querySubject: '库存(仓库)', spec: '', notes: '', businessType: [] };
+             setInputs(empty);
+             setQuery(empty);
+        };
+        const handleInputChange = (field, val) => setInputs(prev => ({...prev, [field]: val}));
+        const handleClearSubject = () => {
+             setInputs(prev => ({...prev, querySubject: ''}));
+        };
+
+        // Compute List
+        // If querySubject is present -> Ledger Mode (With balances)
+        // If querySubject is empty   -> Global Mode (Just transactions)
+        const listWithBalances = useMemo(() => {
+            const subject = query.querySubject.trim();
+            const isGlobal = !subject;
+
+            // Sort by timestamp
+            const sorted = [...transactions].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            
+            // For Ledger Mode
+            const balMap = {}; 
+            const getBal = (s) => balMap[s] || 0;
+            const updateBal = (s, delta) => { balMap[s] = fixFloat(getBal(s) + delta); };
+
+            const processedRows = [];
+
+            sorted.forEach(t => {
+                const details = parseRecordDetails(t);
+                const s = t.spec;
+                const w = Math.abs(t.weight);
+                
+                // Common filter checks
+                const matchDate = (!query.startDate || t.date >= query.startDate) && (!query.endDate || t.date <= query.endDate);
+                const matchSpec = !query.spec || t.spec.includes(query.spec);
+                const matchNotes = !query.notes || t.notes.includes(query.notes);
+                
+                // Multi-select business type filter
+                const matchType = query.businessType.length === 0 || (t.subType && query.businessType.includes(t.subType));
+
+                if (isGlobal) {
+                     // Global Mode: Just filter and map
+                     if (matchDate && matchSpec && matchNotes && matchType) {
+                         processedRows.push({
+                             ...t, ...details,
+                             displayType: details.businessType,
+                             displayNotes: details.cleanNotes,
+                             isGlobal: true
+                         });
+                     }
+                } else {
+                    // Ledger Mode: Calculate balance for specific subject
+                    
+                    // --- Strict Filter to avoid double counting ---
+                    // 1. If subject is Warehouse: It's 'relevant' if warehouse is either inParty or outParty (derived).
+                    // 2. If subject is a Party (Team/Supplier): It's 'relevant' ONLY if t.party == subject AND (inParty == subject OR outParty == subject).
+                    
+                    const isSubjectWarehouse = subject === '库存(仓库)';
+                    
+                    let isOwnerAndInvolved = false;
+                    
+                    if (isSubjectWarehouse) {
+                        // For warehouse, we rely on the derived analysis because warehouse isn't usually t.party
+                        // Exception: Direct Issue (Supplier -> Team) skips Warehouse. details.in=Team, details.out=Supplier. Warehouse not involved. Correct.
+                        if (details.inParty === '库存(仓库)' || details.outParty === '库存(仓库)') {
+                            isOwnerAndInvolved = true;
+                        }
+                    } else {
+                        // For normal parties, strictly check ownership to avoid double counting transfers
+                        // This prevents the 'Target' record (where t.party = Target) from showing up in 'Source' ledger, and vice versa.
+                        if (t.party === subject) {
+                            isOwnerAndInvolved = true;
+                        }
+                    }
+
+                    if (!isOwnerAndInvolved) return; // Skip this record for this specific ledger
+
+                    let credit = 0; // In
+                    let debit = 0;  // Out
+                    let isEffective = false;
+
+                    if (details.inParty === subject) {
+                        credit = w;
+                        updateBal(s, w);
+                        isEffective = true;
+                    } else if (details.outParty === subject) {
+                        debit = w;
+                        updateBal(s, -w);
+                        isEffective = true;
+                    }
+
+                    if (isEffective) {
+                        if (matchDate && matchSpec && matchNotes && matchType) {
+                            processedRows.push({
+                                ...t,
+                                ...details,
+                                displayType: details.businessType,
+                                displayNotes: details.cleanNotes,
+                                ledgerCredit: credit,
+                                ledgerDebit: debit,
+                                ledgerBalance: getBal(s),
+                                opponent: details.inParty === subject ? details.outParty : details.inParty,
+                                isGlobal: false
+                            });
+                        }
+                    }
+                }
+            });
+
+            return processedRows.reverse(); // Show newest first
+        }, [transactions, query]);
+
+        // Logic for Summary Report (Actual Stock Calculation)
+        const summaryData = useMemo(() => {
+            const start = query.startDate || '0000-01-01';
+            const end = query.endDate || '9999-12-31';
+            
+            // Structure: Key -> { open: 0, in: 0, out: 0 }
+            const statsMap = {};
+
+            const add = (p, s, v, date) => {
+                if (!p) return;
+                const k = `${p}|${s}`;
+                if (!statsMap[k]) statsMap[k] = { open: 0, in: 0, out: 0 };
+                
+                if (date < start) {
+                    statsMap[k].open = fixFloat(statsMap[k].open + v);
+                } else if (date <= end) {
+                    // Within Period
+                    if (v >= 0) {
+                        statsMap[k].in = fixFloat(statsMap[k].in + v);
+                    } else {
+                        statsMap[k].out = fixFloat(statsMap[k].out + v);
+                    }
+                }
+                // Date > end is ignored for this report
+            };
+
+            transactions.forEach(t => {
+                const s = t.spec;
+                const w = fixFloat(t.weight);
+                const absW = Math.abs(w);
+                const d = t.date;
+                
+                if (t.type === 'IN') {
+                    if (t.subType === '采购入库' || t.subType === '调拨入库') {
+                        add('库存(仓库)', s, absW, d);
+                    } else if (t.subType === '退料入库') {
+                        add('库存(仓库)', s, absW, d);
+                        add(t.party, s, -absW, d);
+                    }
+                } else { 
+                    if (t.subType === '正常领用') {
+                        add('库存(仓库)', s, -absW, d);
+                        add(t.party, s, absW, d);
+                    } else if (t.subType === '直收直发') {
+                        add(t.party, s, absW, d);
+                    } else if (t.subType === '内部调拨-出') {
+                        add(t.party, s, w, d); // w is negative
+                    } else if (t.subType === '内部调拨-入') {
+                        add(t.party, s, w, d); // w is positive
+                    } else if (t.subType === '调拨出库') {
+                        add('库存(仓库)', s, -absW, d);
+                        add(t.party, s, absW, d);
+                    } else if (t.subType === '处置/销售' || t.subType === '盘亏') {
+                        add('库存(仓库)', s, -absW, d);
+                    }
+                }
+            });
+
+            // Convert map to array
+            let results = Object.entries(statsMap).map(([key, val]) => {
+                const [party, spec] = key.split('|');
+                const closing = fixFloat(val.open + val.in + val.out);
+                return { party, spec, ...val, closing };
+            });
+
+            // Filter results based on User Input
+            if (query.querySubject) {
+                results = results.filter(r => r.party.includes(query.querySubject.trim()));
+            }
+            if (query.spec) {
+                results = results.filter(r => r.spec.includes(query.spec.trim()));
+            }
+
+            // Only show rows that have some activity or non-zero balance
+            return results.filter(r => Math.abs(r.open) > 0.001 || Math.abs(r.in) > 0.001 || Math.abs(r.out) > 0.001 || Math.abs(r.closing) > 0.001).sort((a,b) => {
+                if (groupBy === 'team') {
+                    if (a.party !== b.party) return a.party.localeCompare(b.party);
+                    return a.spec.localeCompare(b.spec);
+                } else {
+                    if (a.spec !== b.spec) return a.spec.localeCompare(b.spec);
+                    return a.party.localeCompare(b.party);
+                }
+            });
+        }, [transactions, query.endDate, query.startDate, query.querySubject, query.spec, groupBy]);
+
+        const exportCSV = () => {
+          if (viewMode === 'list') {
+            const isGlobal = !query.querySubject.trim();
+            let headers = "";
+            let rows = "";
+            
+            if (isGlobal) {
+                headers = "台账序号,日期,业务类型,调出方,调入方,重量(吨),规格,备注\n";
+                rows = listWithBalances.map(t => {
+                     return `${t.serialNo || '-'},${t.date},${t.displayType},${t.outParty},${t.inParty},${Math.abs(t.weight)},${t.spec},"${t.displayNotes.replace(/"/g, '""')}"`;
+                }).join("\n");
+                downloadCSV(headers + rows, `钢筋全部流水_${new Date().toISOString().slice(0,10)}.csv`);
+            } else {
+                headers = "台账序号,日期,业务类型,摘要,对方单位/项目,收入(吨),支出(吨),当前结存(吨),规格,备注\n";
+                rows = listWithBalances.map(t => {
+                    return `${t.serialNo || '-'},${t.date},${t.displayType},${t.displayNotes.replace(/"/g, '""')},${t.opponent},${t.ledgerCredit || 0},${t.ledgerDebit || 0},${t.ledgerBalance},${t.spec},${t.notes.replace(/"/g, '""')}`;
+                }).join("\n");
+                downloadCSV(headers + rows, `钢筋流水账_${query.querySubject}_${new Date().toISOString().slice(0,10)}.csv`);
+            }
+          } else {
+            const headers = "相关方/队伍,规格,期初持有(吨),期间调入/增加(吨),期间调出/减少(吨),期末持有(吨)\n";
+            const rows = summaryData.map(s => `${s.party},${s.spec},${s.open.toFixed(3)},${s.in.toFixed(3)},${s.out.toFixed(3)},${s.closing.toFixed(3)}`).join("\n");
+            downloadCSV(headers + rows, `钢筋汇总报表_${new Date().toISOString().slice(0,10)}.csv`);
+          }
+        };
+
+        const handleDelete = (t) => {
+            if(confirm('确定删除此记录吗？操作不可恢复。')) onDelete(t.id);
+        };
+
+        const handleSaveEdit = (updatedItem) => {
+            onUpdate(updatedItem);
+            setEditingItem(null);
+        };
+        
+        // Dynamic Column Title
+        const summaryColTitle = query.startDate ? "期间净发生量 (吨)" : "实际持有量/库存量 (吨)";
+
+        // Calculate Page Totals for Ledger
+        const ledgerTotals = useMemo(() => {
+            return listWithBalances.reduce((acc, t) => ({
+                credit: fixFloat(acc.credit + (t.ledgerCredit || 0)),
+                debit: fixFloat(acc.debit + (t.ledgerDebit || 0)),
+                vol: fixFloat(acc.vol + Math.abs(t.weight)) // For Global View
+            }), { credit: 0, debit: 0, vol: 0 });
+        }, [listWithBalances]);
+
+        // Calculate Totals for Summary
+        const summaryTotals = useMemo(() => {
+            return summaryData.reduce((acc, item) => ({
+                open: fixFloat(acc.open + item.open),
+                in: fixFloat(acc.in + item.in),
+                out: fixFloat(acc.out + item.out),
+                closing: fixFloat(acc.closing + item.closing)
+            }), { open: 0, in: 0, out: 0, closing: 0 });
+        }, [summaryData]);
+
+        const isLedgerView = !!query.querySubject.trim();
+        
+        // Calculate Total Actual Stock for the selected subject (Ignorning date filters, showing current state)
+        const currentSubjectTotalStock = useMemo(() => {
+            if (!query.querySubject.trim()) return 0;
+            const subject = query.querySubject.trim();
+            const cutoffDate = query.endDate; // Support End Date filter
+            
+            return transactions.reduce((acc, t) => {
+                // Strict check: if cutoffDate exists, exclude records after it
+                if (cutoffDate && t.date > cutoffDate) return acc;
+
+                const details = parseRecordDetails(t);
+                const w = Math.abs(t.weight);
+                
+                let delta = 0;
+                // Strict check: does this transaction belong to the subject?
+                const isSubjectWarehouse = subject === '库存(仓库)';
+                let isOwnerAndInvolved = false;
+        
+                if (isSubjectWarehouse) {
+                     if (details.inParty === '库存(仓库)' || details.outParty === '库存(仓库)') isOwnerAndInvolved = true;
+                } else {
+                     if (t.party === subject) isOwnerAndInvolved = true;
+                }
+                
+                if (!isOwnerAndInvolved) return acc;
+        
+                if (details.inParty === subject) delta = w;
+                else if (details.outParty === subject) delta = -w;
+                
+                return fixFloat(acc + delta);
+            }, 0);
+        }, [transactions, query.querySubject, query.endDate]);
+
+        return (
+          <div className="p-8 h-full bg-gray-50 flex flex-col">
+            <div className="flex justify-between items-end mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">🔍 明细台账 & 报表</h2>
+                <div className="flex gap-4 mt-2">
+                    <button onClick={() => setViewMode('list')} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                        {isLedgerView ? '流水台账 (指定对象)' : '全部流水 (全局)'}
+                    </button>
+                    <button onClick={() => setViewMode('summary')} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${viewMode === 'summary' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>汇总报表</button>
+                </div>
+              </div>
+              <button onClick={exportCSV} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"><IconDownload /> 导出{viewMode === 'list' ? (isLedgerView ? '台账' : '流水') : '报表'}</button>
+            </div>
+
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 mb-4 space-y-4">
+               {/* Search Filters */}
+               <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-9 gap-3">
+                  <div className="col-span-1">
+                      <label className="block text-xs font-bold text-gray-500 mb-1">开始日期</label>
+                      <input type="date" value={inputs.startDate} onChange={e => handleInputChange('startDate', e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" />
+                  </div>
+                  <div className="col-span-1">
+                      <label className="block text-xs font-bold text-gray-500 mb-1">{viewMode === 'summary' ? '截止日期' : '结束日期'}</label>
+                      <input type="date" value={inputs.endDate} onChange={e => handleInputChange('endDate', e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" />
+                  </div>
+                  
+                  {/* Subject Filter - Optional now with Clear Button */}
+                  <div className="col-span-2 relative group">
+                      <label className="block text-xs font-bold text-blue-600 mb-1">统计基准对象 (清空查看全部)</label>
+                      <input list="filter_parties" type="text" placeholder="默认: 库存(仓库)" value={inputs.querySubject} onChange={e => handleInputChange('querySubject', e.target.value)} className="w-full px-2 py-2 border border-blue-300 bg-blue-50 rounded text-sm focus:border-blue-500 outline-none font-bold text-blue-900 placeholder-blue-300" />
+                      {inputs.querySubject && (
+                        <button onClick={handleClearSubject} className="absolute right-2 top-8 text-gray-400 hover:text-red-500 transition-colors">
+                            <IconX />
+                        </button>
+                      )}
+                  </div>
+
+                  <div className="col-span-1">
+                      <label className="block text-xs font-bold text-gray-500 mb-1">业务类型 (多选)</label>
+                      <MultiSelect 
+                        placeholder="全部" 
+                        options={filterTypeOptions}
+                        value={inputs.businessType} 
+                        onChange={val => handleInputChange('businessType', val)} 
+                      />
+                  </div>
+                  
+                  <div className="col-span-1"><label className="block text-xs font-bold text-gray-500 mb-1">规格</label><input list="filter_specs" type="text" placeholder="关键字" value={inputs.spec} onChange={e => handleInputChange('spec', e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" /></div>
+                  <div className="col-span-1"><label className="block text-xs font-bold text-gray-500 mb-1">备注</label><input type="text" placeholder="关键字" value={inputs.notes} onChange={e => handleInputChange('notes', e.target.value)} disabled={viewMode==='summary'} className={`w-full px-2 py-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none ${viewMode==='summary'?'bg-gray-100 text-gray-400':''}`} /></div>
+                  <div className="col-span-2 flex items-end gap-1">
+                      <button onClick={handleSearch} className="flex-1 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-bold flex items-center justify-center gap-1"><IconSearch /> 查询</button>
+                      <button onClick={handleReset} className="px-3 py-2 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 text-sm">重置</button>
+                  </div>
+               </div>
+               <datalist id="filter_parties">{allParties.map(p => <option key={p} value={p} />)}</datalist>
+               <datalist id="filter_specs">{masterData.specs.map(s => <option key={s} value={s} />)}</datalist>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-white rounded-lg shadow-sm border border-gray-200">
+              {viewMode === 'list' ? (
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50 text-gray-500 font-medium sticky top-0 z-10 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 whitespace-nowrap bg-gray-50">台账序号</th>
+                        <th className="px-4 py-3 whitespace-nowrap bg-gray-50">业务日期</th>
+                        <th className="px-4 py-3 whitespace-nowrap bg-gray-50">类型</th>
+                        
+                        {isLedgerView ? (
+                           <>
+                             <th className="px-4 py-3 bg-gray-50">对方单位 / 项目</th>
+                             <th className="px-4 py-3 text-right text-blue-600 bg-blue-50 border-l border-blue-100">收入 (吨)</th>
+                             <th className="px-4 py-3 text-right text-orange-600 bg-orange-50 border-l border-orange-100">支出 (吨)</th>
+                             <th className="px-4 py-3 text-right bg-gray-100 font-bold border-l border-gray-200">结存 (吨)</th>
+                           </>
+                        ) : (
+                           <>
+                             <th className="px-4 py-3 bg-gray-50">调出方</th>
+                             <th className="px-4 py-3 bg-gray-50">调入方</th>
+                             <th className="px-4 py-3 text-right bg-gray-50">重量 (吨)</th>
+                           </>
+                        )}
+                        
+                        <th className="px-4 py-3 bg-gray-50">规格</th>
+                        <th className="px-4 py-3 bg-gray-50">备注</th>
+                        <th className="px-4 py-3 w-20 text-center bg-gray-50">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {listWithBalances.length === 0 ? (
+                        <tr><td colSpan={isLedgerView ? 10 : 9} className="px-6 py-12 text-center text-gray-400">没有找到记录</td></tr>
+                      ) : listWithBalances.map(t => {
+                        return (
+                        <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 font-mono text-gray-500 text-xs whitespace-nowrap">{t.serialNo || '-'}</td>
+                          <td className="px-4 py-3 font-mono text-gray-600 whitespace-nowrap">{t.date}</td>
+                          <td className="px-4 py-3 whitespace-nowrap"><span className="font-medium text-gray-700">{t.displayType}</span></td>
+                          
+                          {isLedgerView ? (
+                              <>
+                                <td className="px-4 py-3 text-gray-600 text-xs">{t.opponent}</td>
+                                <td className="px-4 py-3 text-right font-mono text-blue-600 bg-blue-50/30 border-l border-blue-50">{t.ledgerCredit ? t.ledgerCredit.toFixed(3) : '-'}</td>
+                                <td className="px-4 py-3 text-right font-mono text-orange-600 bg-orange-50/30 border-l border-orange-50">{t.ledgerDebit ? t.ledgerDebit.toFixed(3) : '-'}</td>
+                                <td className="px-4 py-3 text-right font-mono font-bold text-gray-700 bg-gray-50/50 border-l border-gray-100">{t.ledgerBalance.toFixed(3)}</td>
+                              </>
+                          ) : (
+                              <>
+                                <td className="px-4 py-3 text-gray-600">{t.outParty}</td>
+                                <td className="px-4 py-3 text-gray-600">{t.inParty}</td>
+                                <td className="px-4 py-3 text-right font-mono font-bold text-gray-700">{Math.abs(t.weight).toFixed(3)}</td>
+                              </>
+                          )}
+
+                          <td className="px-4 py-3 font-mono text-gray-500 text-xs">{t.spec}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs max-w-xs truncate" title={t.displayNotes}>{t.displayNotes}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                                <button onClick={() => setEditingItem(t)} className="text-gray-400 hover:text-blue-500 transition-colors p-1" title="修改"><IconEdit /></button>
+                                <button onClick={() => handleDelete(t)} className="text-gray-400 hover:text-red-500 transition-colors p-1" title="删除"><IconTrash /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      )})}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                        <tr>
+                            <td colSpan={isLedgerView ? 10 : 9} className="px-4 py-3">
+                                <div className="flex justify-end items-center text-sm gap-8">
+                                    <span className="text-gray-500">本页合计:</span>
+                                    {isLedgerView ? (
+                                        <>
+                                            <span className="text-blue-600">总收入: <strong>{ledgerTotals.credit.toFixed(3)}</strong></span>
+                                            <span className="text-orange-600">总支出: <strong>{ledgerTotals.debit.toFixed(3)}</strong></span>
+                                            {query.startDate ? (
+                                                <span className="ml-4 px-3 py-1 bg-purple-100 text-purple-800 rounded border border-purple-200">
+                                                    期间净发生: <strong>{(ledgerTotals.credit - ledgerTotals.debit).toFixed(3)}</strong> 吨
+                                                </span>
+                                            ) : (
+                                                <span className="ml-4 px-3 py-1 bg-blue-100 text-blue-800 rounded border border-blue-200">
+                                                    该对象当前实际总库存: <strong>{currentSubjectTotalStock.toFixed(3)}</strong> 吨
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <span className="text-gray-800">总重量: <strong>{ledgerTotals.vol.toFixed(3)}</strong></span>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
+                    </tfoot>
+                  </table>
+              ) : (
+                  <div>
+                    <div className="flex items-center gap-4 px-6 py-3 bg-gray-50 border-b border-gray-200 text-sm">
+                        <span className="font-bold text-gray-600">汇总方式:</span>
+                        <label className="flex items-center cursor-pointer gap-2">
+                            <input type="radio" name="groupby" checked={groupBy==='team'} onChange={() => setGroupBy('team')} className="text-blue-600" />
+                            <span>按主体汇总</span>
+                        </label>
+                        <label className="flex items-center cursor-pointer gap-2">
+                            <input type="radio" name="groupby" checked={groupBy==='spec'} onChange={() => setGroupBy('spec')} className="text-blue-600" />
+                            <span>按规格汇总</span>
+                        </label>
+                    </div>
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-gray-500 font-medium sticky top-0 z-10 border-b border-gray-200">
+                        <tr>
+                            <th className="px-6 py-3">{groupBy==='team' ? '相关方 / 队伍' : '钢筋规格'}</th>
+                            <th className="px-6 py-3">{groupBy==='team' ? '钢筋规格' : '相关方 / 队伍'}</th>
+                            <th className="px-6 py-3 text-right text-gray-500">期初持有(吨)</th>
+                            <th className="px-6 py-3 text-right text-green-600">期间入库/调入(吨)</th>
+                            <th className="px-6 py-3 text-right text-orange-600">期间出库/调出(吨)</th>
+                            <th className="px-6 py-3 text-right text-blue-700">期末持有(吨)</th>
+                        </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                        {summaryData.length === 0 ? (
+                            <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">没有数据 (请检查筛选条件)</td></tr>
+                        ) : summaryData.map((s, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-6 py-3 font-medium text-gray-900">{groupBy==='team' ? s.party : s.spec}</td>
+                                <td className="px-6 py-3 font-mono text-gray-600">{groupBy==='team' ? s.spec : s.party}</td>
+                                <td className="px-6 py-3 text-right text-gray-500">{s.open.toFixed(3)}</td>
+                                <td className="px-6 py-3 text-right text-green-600 font-bold">{s.in > 0 ? `+${s.in.toFixed(3)}` : '-'}</td>
+                                <td className="px-6 py-3 text-right text-orange-600 font-bold">{s.out < 0 ? s.out.toFixed(3) : '-'}</td>
+                                <td className="px-6 py-3 text-right font-bold text-blue-700 text-base">{s.closing.toFixed(3)}</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                        <tfoot className="bg-gray-100 font-bold border-t-2 border-gray-200">
+                            <tr>
+                                <td className="px-6 py-3 text-gray-800" colSpan={2}>合计 (Total)</td>
+                                <td className="px-6 py-3 text-right text-gray-600">{summaryTotals.open.toFixed(3)}</td>
+                                <td className="px-6 py-3 text-right text-green-700">{summaryTotals.in.toFixed(3)}</td>
+                                <td className="px-6 py-3 text-right text-orange-700">{summaryTotals.out.toFixed(3)}</td>
+                                <td className="px-6 py-3 text-right text-blue-800 text-lg">{summaryTotals.closing.toFixed(3)}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                  </div>
+              )}
+            </div>
+            
+            {editingItem && (
+                <EditModal 
+                    transaction={editingItem} 
+                    masterData={masterData} 
+                    onClose={() => setEditingItem(null)} 
+                    onSave={handleSaveEdit} 
+                />
+            )}
+          </div>
+        );
+      };
+
+      const Settings = ({ masterData, transactions, onSaveMasterData, onLoadBackup, onClearData }) => {
+        const [teamsInput, setTeamsInput] = useState('');
+        const [sourcesInput, setSourcesInput] = useState('');
+        const [specsInput, setSpecsInput] = useState('');
+        const [partnersInput, setPartnersInput] = useState('');
+        const [recyclersInput, setRecyclersInput] = useState('');
+        const fileInputRef = useRef(null);
+
+        useEffect(() => {
+          setTeamsInput(masterData.teams ? masterData.teams.join('\n') : '');
+          setSourcesInput(masterData.sources ? masterData.sources.join('\n') : '');
+          setSpecsInput(masterData.specs ? masterData.specs.join('\n') : '');
+          setPartnersInput(masterData.partners ? masterData.partners.join('\n') : '');
+          setRecyclersInput(masterData.recyclers ? masterData.recyclers.join('\n') : '');
+        }, [masterData]);
+
+        const getCurrentData = () => ({
+          teams: teamsInput.split('\n').map(s => s.trim()).filter(Boolean),
+          sources: sourcesInput.split('\n').map(s => s.trim()).filter(Boolean),
+          specs: specsInput.split('\n').map(s => s.trim()).filter(Boolean),
+          partners: partnersInput.split('\n').map(s => s.trim()).filter(Boolean),
+          recyclers: recyclersInput.split('\n').map(s => s.trim()).filter(Boolean),
+          teamLimits: masterData.teamLimits || {} // Preserve limits on text edit
+        });
+
+        const handleSave = () => {
+          const newData = getCurrentData();
+          
+          const removedTeams = masterData.teams.filter(t => !newData.teams.includes(t));
+          const removedSources = masterData.sources.filter(s => !newData.sources.includes(s));
+          
+          for (const t of transactions) {
+             if (removedTeams.includes(t.party)) return alert(`无法删除队伍 "${t.party}"，因为存在相关联的历史记录。\n请撤销删除或修改记录后再试。`);
+             if (removedSources.includes(t.party)) return alert(`无法删除来源 "${t.party}"，因为存在相关联的历史记录。\n请撤销删除或修改记录后再试。`);
+          }
+
+          onSaveMasterData(newData);
+          alert('设置已保存');
+        };
+
+        const handleExportBackup = () => {
+          const backupData = { transactions: transactions, masterData: getCurrentData(), exportDate: new Date().toISOString(), version: '2.0.0' };
+          const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `钢筋库存系统备份_${new Date().toISOString().slice(0,10)}.json`;
+          link.click();
+          return true;
+        };
+        
+        const handleClearDataClick = () => {
+            if (transactions.length === 0) return alert("当前没有流水数据。");
+            if (confirm("⚠️ 危险操作警告 ⚠️\n\n即将【清空】所有历史流水数据！\n\n系统将首先自动下载一份备份文件。\n请确保备份文件下载成功后再进行后续操作。\n\n确定要继续吗？")) {
+                handleExportBackup();
+                // Delay to allow backup download to start
+                setTimeout(() => {
+                    if (confirm("备份已启动。\n\n最后确认：是否清空所有数据？此操作不可逆！")) {
+                        onClearData();
+                    }
+                }, 1000);
+            }
+        };
+
+        const handleImportClick = () => fileInputRef.current?.click();
+        
+        const handleFileChange = (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            try {
+              const json = JSON.parse(event.target?.result);
+              if (json.transactions && json.masterData) onLoadBackup(json.transactions, json.masterData);
+              else alert('无效的备份文件格式');
+            } catch (err) { alert('文件解析失败'); }
+            if (fileInputRef.current) fileInputRef.current.value = '';
+          };
+          reader.readAsText(file);
+        };
+
+        const handleExportStockCSV = () => {
+           const stockBySpec = {};
+           transactions.forEach(t => {
+             if(!stockBySpec[t.spec]) stockBySpec[t.spec] = {in: 0, out: 0};
+             if(t.type === 'IN') stockBySpec[t.spec].in += t.weight;
+             if(t.type === 'OUT') stockBySpec[t.spec].out += t.weight;
+           });
+           let csv = "规格型号,累计入库(吨),累计出库(吨),当前库存(吨)\n";
+           Object.entries(stockBySpec).forEach(([spec, data]) => { csv += `${spec},${data.in.toFixed(3)},${data.out.toFixed(3)},${(data.in - data.out).toFixed(3)}\n`; });
+          downloadCSV(csv, `库存盘点报表_${new Date().toISOString().slice(0,10)}.csv`);
+        };
+
+        const handleExportMasterDataCSV = () => {
+          const currentData = getCurrentData();
+          let csv = "类别,名称/内容\n";
+          currentData.teams.forEach(t => csv += `劳务队伍,${t}\n`);
+          currentData.sources.forEach(s => csv += `来源供应商,${s}\n`);
+          currentData.specs.forEach(s => csv += `钢筋规格,${s}\n`);
+          currentData.partners.forEach(s => csv += `往来单位,${s}\n`);
+          currentData.recyclers.forEach(s => csv += `回收单位,${s}\n`);
+          downloadCSV(csv, `基础信息设置_${new Date().toISOString().slice(0,10)}.csv`);
+        };
+
+        const handleExportAllTransactionsCSV = () => {
+          const headers = "业务日期,类型,子类型,相关方(来源/队伍),规格,重量(吨),备注,系统ID\n";
+          const rows = transactions.map(t => `${t.date},${t.type === 'IN' ? '入库' : '出库'},${t.subType || '-'},${t.party},${t.spec},${t.weight},"${t.notes.replace(/"/g, '""')}",${t.id}`).join("\n");
+          downloadCSV(headers + rows, `完整流水台账_${new Date().toISOString().slice(0,10)}.csv`);
+        };
+
+        return (
+          <div className="p-8 h-full bg-gray-50 overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">⚙️ 基础设置</h2>
+              <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all active:scale-95">保存设置</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-green-100 flex flex-col">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><IconFileExcel /> 📊 Excel 数据导出</h3>
+                <div className="space-y-3 flex-1">
+                   <button onClick={handleExportStockCSV} className="w-full flex items-center justify-between p-3 border border-green-200 bg-green-50 text-green-800 rounded-lg hover:bg-green-100 transition-colors text-sm"><span>📦 库存盘点报表</span><span className="text-xs text-green-600 bg-white px-2 py-1 rounded border border-green-100">.csv</span></button>
+                  <button onClick={handleExportAllTransactionsCSV} className="w-full flex items-center justify-between p-3 border border-green-200 bg-green-50 text-green-800 rounded-lg hover:bg-green-100 transition-colors text-sm"><span>📝 完整流水台账</span><span className="text-xs text-green-600 bg-white px-2 py-1 rounded border border-green-100">.csv</span></button>
+                  <button onClick={handleExportMasterDataCSV} className="w-full flex items-center justify-between p-3 border border-green-200 bg-green-50 text-green-800 rounded-lg hover:bg-green-100 transition-colors text-sm"><span>🏗️ 基础信息设置</span><span className="text-xs text-green-600 bg-white px-2 py-1 rounded border border-green-100">.csv</span></button>
+                </div>
+                <p className="text-xs text-gray-400 mt-3">说明: 导出的数据可直接使用 Excel 打开。</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><IconDownload /> 💾 系统数据备份</h3>
+                <div className="space-y-3 flex-1">
+                  <button onClick={handleExportBackup} className="w-full flex items-center justify-center gap-2 p-3 border border-gray-200 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors text-sm"><IconDownload />下载完整备份 (.json)</button>
+                  <button onClick={handleImportClick} className="w-full flex items-center justify-center gap-2 p-3 border border-orange-200 bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 transition-colors text-sm"><IconUpload />恢复数据备份</button>
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
+                </div>
+                <p className="text-xs text-gray-400 mt-3">说明: 备份文件用于迁移数据到新设备。</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100"><h3 className="font-bold text-gray-800 mb-2">👷 劳务队伍</h3><p className="text-xs text-gray-400 mb-4">领用方列表，一行一个</p><textarea className="w-full h-64 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={teamsInput} onChange={e => setTeamsInput(e.target.value)} /></div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100"><h3 className="font-bold text-gray-800 mb-2">🏭 来源/供应商</h3><p className="text-xs text-gray-400 mb-4">入库来源列表，一行一个</p><textarea className="w-full h-64 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={sourcesInput} onChange={e => setSourcesInput(e.target.value)} /></div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100"><h3 className="font-bold text-gray-800 mb-2">📏 常用规格</h3><p className="text-xs text-gray-400 mb-4">钢筋规格型号，一行一个</p><textarea className="w-full h-64 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={specsInput} onChange={e => setSpecsInput(e.target.value)} /></div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100"><h3 className="font-bold text-gray-800 mb-2">🤝 往来单位</h3><p className="text-xs text-gray-400 mb-4">调拨出/入库单位，一行一个</p><textarea className="w-full h-64 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={partnersInput} onChange={e => setPartnersInput(e.target.value)} /></div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100"><h3 className="font-bold text-gray-800 mb-2">♻️ 回收单位</h3><p className="text-xs text-gray-400 mb-4">处置/销售接收方，一行一个</p><textarea className="w-full h-64 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={recyclersInput} onChange={e => setRecyclersInput(e.target.value)} /></div>
+            </div>
+
+            <div className="bg-red-50 p-6 rounded-xl border border-red-200 mb-8">
+                <h3 className="font-bold text-red-700 mb-4 flex items-center gap-2">🚫 危险区域</h3>
+                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                    <p className="text-sm text-red-600">此操作将清空所有“流水记录”数据，但保留基础设置（队伍/规格）。<br/>系统会在清空前强制自动下载备份。</p>
+                    <button onClick={handleClearDataClick} className="px-6 py-2 bg-red-600 text-white font-bold rounded-lg shadow hover:bg-red-700 transition-colors">清空所有流水数据</button>
+                </div>
+            </div>
+
+          </div>
+        );
+      };
+
+      const App = () => {
+        const [activeTab, setActiveTab] = useState('dashboard');
+        const [transactions, setTransactions] = useState(() => {
+          const saved = localStorage.getItem('rebar_transactions');
+          return saved ? JSON.parse(saved) : [];
+        });
+        const [masterData, setMasterData] = useState(() => {
+          const saved = localStorage.getItem('rebar_master');
+          const defaultData = {
+            teams: ['一工区-木工队', '一工区-钢筋一队', '二工区-钢筋二队', '混凝土班组'],
+            sources: ['建材总公司', '鑫源钢材厂'],
+            specs: ['HRB400E-8', 'HRB400E-10', 'HRB400E-12', 'HRB400E-14', 'HRB400E-16', 'HRB400E-18', 'HRB400E-20', 'HRB400E-22', 'HRB400E-25'],
+            partners: ['项目部B', '二工区'],
+            recyclers: ['物资回收站A'],
+            teamLimits: {} // Object to store team usage limits { "TeamName": 1000 }
+          };
+          
+          if (!saved) return defaultData;
+          
+          const parsed = JSON.parse(saved);
+          return {
+             teams: parsed.teams || defaultData.teams,
+             sources: parsed.sources || defaultData.sources,
+             specs: parsed.specs || defaultData.specs,
+             partners: parsed.partners || defaultData.partners,
+             recyclers: parsed.recyclers || defaultData.recyclers,
+             teamLimits: parsed.teamLimits || {}
+          };
+        });
+
+        useEffect(() => { localStorage.setItem('rebar_transactions', JSON.stringify(transactions)); }, [transactions]);
+        useEffect(() => { localStorage.setItem('rebar_master', JSON.stringify(masterData)); }, [masterData]);
+
+        const addTransaction = (t) => { setTransactions(prev => [...prev, t]); };
+        
+        const updateTransaction = (updated) => {
+             setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
+        };
+
+        const deleteTransaction = (id) => { setTransactions(prev => prev.filter(t => t.id !== id)); };
+        
+        const loadBackup = (t, m) => { if (confirm('这将覆盖当前所有数据，确定要恢复吗？')) { setTransactions(t); setMasterData(m); alert('数据恢复成功！'); } };
+        
+        const clearAllData = () => {
+            setTransactions([]);
+            alert('所有流水数据已清空。');
+        };
+
+        return (
+          <div className="flex h-screen w-full bg-gray-100 font-sans text-slate-900">
+            <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+            <main className="flex-1 overflow-hidden relative">
+              {activeTab === 'dashboard' && <Dashboard transactions={transactions} masterData={masterData} onUpdateMasterData={setMasterData} />}
+              {activeTab === 'entry' && <EntryForm masterData={masterData} transactions={transactions} onAdd={addTransaction} />}
+              {activeTab === 'records' && <RecordsTable transactions={transactions} masterData={masterData} onDelete={deleteTransaction} onUpdate={updateTransaction} />}
+              {activeTab === 'settings' && <Settings masterData={masterData} transactions={transactions} onSaveMasterData={setMasterData} onLoadBackup={loadBackup} onClearData={clearAllData} />}
+            </main>
+          </div>
+        );
+      };
+
+      const root = createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+</body>
+</html>
